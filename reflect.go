@@ -20,7 +20,12 @@ import (
 	"strings"
 )
 
-type fieldMap map[string]reflect.StructField
+type fieldDesc struct {
+	reflect.StructField
+	optlock bool
+}
+
+type fieldMap map[string]fieldDesc
 
 const (
 	tagName    = "db"
@@ -47,7 +52,7 @@ func getMapping(t reflect.Type, mapFunc func(string) string) fieldMap {
 		for fieldPos := 0; fieldPos < tq.t.NumField(); fieldPos++ {
 			f := tq.t.Field(fieldPos)
 
-			name, _ := readTag(f.Tag.Get(tagName))
+			name, optlock := readTag(f.Tag.Get(tagName))
 
 			// Breadth first search of untagged anonymous embedded structs.
 			if f.Anonymous && f.Type.Kind() == reflect.Struct && name == "" {
@@ -81,7 +86,7 @@ func getMapping(t reflect.Type, mapFunc func(string) string) fieldMap {
 			// Add it to the map at the current position.
 			sf := f
 			sf.Index = appendIndex(tq.p, fieldPos)
-			m[name] = sf
+			m[name] = fieldDesc{sf, optlock}
 		}
 	}
 	return m
@@ -137,6 +142,32 @@ func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols, ignore
 		return nil, fmt.Errorf("model fields '%s' have no corresponding db field", strings.Join(notMapped, ", "))
 	}
 	return mappedColumns, nil
+}
+
+func (m fieldMap) getOptlockColumnName() (*string, error) {
+	var (
+		optlockColumnName string
+		found             bool
+	)
+	for name, f := range m {
+		if f.optlock {
+			if found {
+				return nil, fmt.Errorf("model has two columns marked for optimistic locking")
+			}
+			if k := f.Type.Kind(); !(k == reflect.Int || k == reflect.Int8 ||
+				k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64 ||
+				k == reflect.Uint || k == reflect.Uint8 || k == reflect.Uint16 ||
+				k == reflect.Uint32 || k == reflect.Uint64) {
+				return nil, fmt.Errorf("model field '%s' must be of int or uint kind to be marked for optimistic locking", f.Name)
+			}
+			optlockColumnName = name
+			found = true
+		}
+	}
+	if found {
+		return &optlockColumnName, nil
+	}
+	return nil, nil
 }
 
 // deref is Indirect for reflect.Type

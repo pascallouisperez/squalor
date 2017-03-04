@@ -81,7 +81,7 @@ func newTestStatementsDB(t *testing.T) *DB {
 			},
 		},
 		{
-			"single_optlock",
+			"single_ol",
 			singleColOptlock{},
 			1,
 			nil,
@@ -439,12 +439,12 @@ func TestDBUpdateStatements(t *testing.T) {
 					"WHERE (`multi`.`a` = 5 AND `multi`.`b` = 6 AND `multi`.`c` = 7)",
 			},
 		},
-		// {[]interface{}{&singleColOptlock{1, 2, 3}},
-		// 	[]string{
-		// 		"UPDATE `single` SET `single`.`b` = 2, `single`.`v` = 4 " +
-		// 			"WHERE `single`.`a` = 1 and `single`.`v` = 3",
-		// 	},
-		// },
+		{[]interface{}{&singleColOptlock{1, 2, 3}},
+			[]string{
+				"UPDATE `single_ol` SET `single_ol`.`b` = 2, `single_ol`.`v` = `single_ol`.`v`+1 " +
+					"WHERE (`single_ol`.`a` = 1 AND `single_ol`.`v` = 3)",
+			},
+		},
 	}
 
 	for _, c := range testCases {
