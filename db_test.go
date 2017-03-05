@@ -1155,12 +1155,19 @@ func TestVersionedUser_base(t *testing.T) {
 		t.Fatalf("expected one modified row, got %d", count)
 	}
 
-	// Check that version was incremmented
-	if err := db.Get(u, u.ID); err != nil {
+	// On update, we expect the in-memory representation of the version
+	// to be incremented.
+	if u.Version != 2 {
+		t.Fatalf("expected in-memory version %d, was at version %d", 2, u.Version)
+	}
+
+	// And similarly, we expect the stored representation to be incremented.
+	stored := &VersionedUser{}
+	if err := db.Get(stored, u.ID); err != nil {
 		t.Fatal(err)
 	}
-	if u.Version != 2 {
-		t.Fatalf("expected version %d, was at version %d", 2, u.Version)
+	if stored.Version != 2 {
+		t.Fatalf("expected stored version %d, was at version %d", 2, stored.Version)
 	}
 }
 

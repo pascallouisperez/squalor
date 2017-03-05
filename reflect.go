@@ -144,30 +144,44 @@ func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols, ignore
 	return mappedColumns, nil
 }
 
-func (m fieldMap) getOptlockColumnName() (*string, error) {
+func (m fieldMap) getOptlockColumnName() (*string, func(reflect.Value), error) {
 	var (
 		optlockColumnName string
+		optlockInc        func(reflect.Value)
 		found             bool
 	)
 	for name, f := range m {
 		if f.optlock {
 			if found {
-				return nil, fmt.Errorf("model has two columns marked for optimistic locking")
+				return nil, nil, fmt.Errorf("model has two columns marked for optimistic locking")
 			}
-			if k := f.Type.Kind(); !(k == reflect.Int || k == reflect.Int8 ||
-				k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64 ||
-				k == reflect.Uint || k == reflect.Uint8 || k == reflect.Uint16 ||
-				k == reflect.Uint32 || k == reflect.Uint64) {
-				return nil, fmt.Errorf("model field '%s' must be of int or uint kind to be marked for optimistic locking", f.Name)
+			var (
+				k     = f.Type.Kind()
+				index = f.Index
+			)
+			if k == reflect.Int || k == reflect.Int8 ||
+				k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64 {
+				optlockInc = func(v reflect.Value) {
+					ver := v.FieldByIndex(index)
+					ver.SetInt(ver.Int() + 1)
+				}
+			} else if k == reflect.Uint || k == reflect.Uint8 || k == reflect.Uint16 ||
+				k == reflect.Uint32 || k == reflect.Uint64 {
+				optlockInc = func(v reflect.Value) {
+					ver := v.FieldByIndex(index)
+					ver.SetUint(ver.Uint() + 1)
+				}
+			} else {
+				return nil, nil, fmt.Errorf("model field '%s' must be of int or uint kind to be marked for optimistic locking", f.Name)
 			}
 			optlockColumnName = name
 			found = true
 		}
 	}
 	if found {
-		return &optlockColumnName, nil
+		return &optlockColumnName, optlockInc, nil
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // deref is Indirect for reflect.Type

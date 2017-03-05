@@ -242,6 +242,8 @@ type Model struct {
 	mappedColNames []string
 	// The name of the column used for optimistic locking, if any.
 	optlockColumnName *string
+	// The incrementor for the version field, if any.
+	optlockInc func(reflect.Value)
 	// The precomputed query plans.
 	delete  deletePlan
 	get     getPlan
@@ -263,11 +265,12 @@ func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 	}
 	m.mappedColumns = mappedColumns
 	m.mappedColNames = getColumnNames(m.mappedColumns)
-	optlockColumnName, err := m.fields.getOptlockColumnName()
-	if err != nil {
+	if n, f, err := m.fields.getOptlockColumnName(); err != nil {
 		panic(fmt.Errorf("%s: %s", table.Name, err))
+	} else {
+		m.optlockColumnName = n
+		m.optlockInc = f
 	}
-	m.optlockColumnName = optlockColumnName
 	m.delete = makeDeletePlan(m)
 	m.get = makeGetPlan(m)
 	m.insert = makeInsertPlan(m, false)
@@ -1531,8 +1534,11 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 		if err != nil {
 			return -1, err
 		}
-		if model.optlockColumnName != nil && rows != 1 {
-			return -1, errors.New("concurrent modification detected")
+		if model.optlockColumnName != nil {
+			if rows != 1 {
+				return -1, errors.New("concurrent modification detected")
+			}
+			model.optlockInc(v)
 		}
 		count += rows
 
