@@ -118,7 +118,7 @@ func (r dummyResult) LastInsertId() (int64, error) {
 }
 
 func (r dummyResult) RowsAffected() (int64, error) {
-	return 0, nil
+	return 1, nil
 }
 
 type recordingExecutor struct {

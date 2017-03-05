@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1114,6 +1115,86 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 	}
 	if int(queriedUser.Age) != 123 {
 		t.Fatalf("our user should be aged 123 years, was %d", queriedUser.Age)
+	}
+}
+
+const versionedUsersDDL = `
+CREATE TABLE users (
+  id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  ver  INT NOT NULL
+)`
+
+type VersionedUser struct {
+	ID      uint64 `db:"id"`
+	Name    string `db:"name"`
+	Version int    `db:"ver,optlock"`
+}
+
+func TestVersionedUser_base(t *testing.T) {
+	db := makeTestDB(t, versionedUsersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", VersionedUser{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert
+	u := &VersionedUser{
+		Name:    "foo",
+		Version: 1,
+	}
+	if err := db.Insert(u); err != nil {
+		t.Fatal(err)
+	}
+
+	// Update
+	u.Name = "bar"
+	if count, err := db.Update(u); err != nil {
+		t.Fatal(err)
+	} else if count != 1 {
+		t.Fatalf("expected one modified row, got %d", count)
+	}
+
+	// Check that version was incremmented
+	if err := db.Get(u, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if u.Version != 2 {
+		t.Fatalf("expected version %d, was at version %d", 2, u.Version)
+	}
+}
+
+func TestVersionedUser_concurrentModification(t *testing.T) {
+	db := makeTestDB(t, versionedUsersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", VersionedUser{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert
+	u := &VersionedUser{
+		Name:    "foo",
+		Version: 1,
+	}
+	if err := db.Insert(u); err != nil {
+		t.Fatal(err)
+	}
+
+	// Concurrent modification
+	if _, err := db.Exec("update users set ver = 456 where id = ?", u.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Meanwhile, we try to udate, and expect a failure
+	u.Name = "bar"
+	_, err := db.Update(u)
+	if err == nil {
+		t.Fatalf("expected a concurrent modification error, but no error occured")
+	}
+	if matched, matchErr := regexp.MatchString(".*concurrent modification.*", fmt.Sprintf("%s", err)); matchErr != nil {
+		t.Fatal(matchErr)
+	} else if !matched {
+		t.Fatalf("expected a concurrent modification error, but was '%s'", err)
 	}
 }
 

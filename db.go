@@ -1531,6 +1531,9 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 		if err != nil {
 			return -1, err
 		}
+		if model.optlockColumnName != nil && rows != 1 {
+			return -1, errors.New("concurrent modification detected")
+		}
 		count += rows
 
 		if err := hooks.post(obj, exec); err != nil {
